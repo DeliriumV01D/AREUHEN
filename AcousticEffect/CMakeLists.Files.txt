@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.4)
+
+#project(AcousticEffect)
+
+set(SOURCES ${SOURCES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Common/TAcousticPressure.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFFT.cpp
+	main.cpp
+)
+
+set(HEADERS ${HEADERS}
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/CommonDefinitions.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TRootApp.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TEnergyDistributionDensity.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TAcousticPressure.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFFT.h
+)
+
+set(LIBS ${LIBS}
+	Imt
+	Core
+	Graf
+	Graf3d
+	MathCore
+	MathMore
+	Gpad
+	#Histexception
+	Hist
+	Matrix
+	Physics
+	Net
+	RIO
+	Thread
+	Unuran
+)
