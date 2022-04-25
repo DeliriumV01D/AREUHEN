@@ -2,7 +2,7 @@
 
 #include <complex>
 
-typedef double fp;
+typedef float fp;
 
 template <class TComplexContainer, class TRealContainer>
 inline void CA2DATA(const TComplexContainer &container, TRealContainer &re_buffer, TRealContainer &im_buffer)

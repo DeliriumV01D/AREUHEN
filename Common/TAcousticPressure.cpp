@@ -75,28 +75,7 @@ void TAcousticPressure :: SetConditions(const TAcousticPressureParams &condition
 		FwWrapper = std::unique_ptr<TFwWrapper>(new TFwWrapper(conditions));
 
 	FwWrapper->SetParams(conditions);
-	LMax = EvaluateLMax();
-}
-
-//Returns the linear coordinate of the maximum of the cascade
-fp TAcousticPressure :: EvaluateLMax()
-{
-	fp result = 0;
-  //TF1 в моей версии ROOT непотокобезопасна и вызывает поломку памяти
-  //при многопоточном использовании, поэтому блокируем мьютексом главный поток
-  TThread::Lock();
-  try {
-    TEnergyDensityDistribution * edd = FwWrapper->GetEDD();
-		auto redl = [edd](const double * x, const double * p){ return (*edd)(1., x[0]); };
-
-    TF1 fredl("REDL", redl, 0., FwWrapper->GetParams().LonCutThreshold, 1);
-    result = static_cast<fp>(fredl.GetMaximumX(0., FwWrapper->GetParams().LonCutThreshold));
-  } catch (std::exception &e){
-    TThread::UnLock();
-    throw e;
-  };
-  TThread::UnLock();
-  return result;
+	LMax = FwWrapper->GetEDD()->EvaluateLMax();//Returns the linear coordinate of the maximum of the cascade
 }
 
 //Ряд значений из N точек акустического эффекта (на данной частоте w) развития ЯЭК в точке распложения детектора (Rd,Zd)
@@ -147,6 +126,49 @@ void TAcousticPressure :: GetPtSeries(	std::vector<std::complex<fp>> &pwx,
 	#pragma omp parallel for
   for (size_t i = 0; i < pt_out.size(); i++)
 		pt[i] = static_cast<fp>(pt_out[i]);											// *fmax;    //Исключается зависимость от частоты дискретизации и !!!
+}
+
+
+///******************************************************************************
+//TRICAP
+//Calculation of the acoustic pressure by the integration method implemented in Root
+//By default uses adaptive multi-dimensional integration using the algorithm from Genz Mallik implemented in the class ROOT::Math::AdaptiveIntegratorMultiDim
+//******************************************************************************/
+
+//Re или Im часть акустического эффекта (на данной частоте w) развития ЯЭК в точке распложения детектора (Rd,Zd)
+std::complex<fp> TRICAP :: GetComplexPwValue (const fp &rd, const fp &zd, const fp &w)
+{
+	std::complex<fp> result;
+	std::vector<Double_t> arg_low(3),
+												arg_hi(3);
+
+	arg_low[0] = 0.;          //r
+	arg_hi[0] = FwWrapper->GetParams().TrCutThreshold;    //r
+	arg_low[1] = 0.;          //z
+	arg_hi[1] = FwWrapper->GetParams().LonCutThreshold;   //z
+	arg_low[2] = 0.;          //phi
+	arg_hi[2] = 2 * TMath::Pi();//phi
+	//By default uses adaptive multi-dimensional integration using the algorithm from Genz Mallik implemented in the class ROOT::Math::AdaptiveIntegratorMultiDim
+	ROOT::Math::IntegratorMultiDim integrator(
+		ROOT::Math::IntegrationMultiDim::kADAPTIVE,/*ADAPTIVE, VEGAS, MISER, PLAIN, ADAPTIVESINGULAR, NONADAPTIVE*/
+		/*double absTol*/1.e-10,
+		/*double relTol*/1.e-10,
+		/*unsigned int ncall*/	10000000
+	);
+	integrator.SetFunction(*FwWrapper, 3);
+
+	auto params = FwWrapper->GetParams();
+	params.Rd = rd;
+	params.Zd = zd;
+	params.w = w;
+	params.PartOfComplexNumber = TPartOfComplexNumber::Re;
+	FwWrapper->SetParams(params);
+	result.real(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data()));
+	params.PartOfComplexNumber = TPartOfComplexNumber::Im;
+	FwWrapper->SetParams(params);
+	result.imag(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data()));
+
+	return result * (params.E0) * w;
 }
 
 
@@ -250,7 +272,7 @@ void TMCICAP :: GetComplexPwSeries(	const fp &rd,
     //есть множитель i => (0 + i*1)*(re + i*im) = -im + i*re
     pwx[i].real(arr_re_pw[i]);
     pwx[i].imag(arr_im_pw[i]);
-		pwx[i] = /*std::complex<fp>(0, 1) * */ pwx[i] * (1. / d * FwWrapper->GetParams().E0 * fp(i/*+1*/)/**Omega*//N);
+		pwx[i] = /*std::complex<fp>(0, 1) * */ pwx[i] * (fp(1.) / d * FwWrapper->GetParams().E0 * fp(i/*+1*/)/**Omega*//N);
     mpwx[i] = sqrt(pow(pwx[i].real(), fp(2.)) + pow(pwx[i].imag(), fp(2.)));
 	}
 

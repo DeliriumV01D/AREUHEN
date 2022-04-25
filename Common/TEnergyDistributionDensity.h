@@ -2,9 +2,19 @@
 
 #include <cmath>
 #include <TMath.h>
+#include "TThread.h"
+#include "TF1.h"
 #include "CommonDefinitions.h"
 
 enum class TEDDParameterization {CORSIM/*, SAUND, NIESSBERTIN*/};
+
+///!!!Refactoring: use this structure in the constructors and data fields
+struct TEnergyDensityDistributionParams {
+	fp E0;												///total energy of the hadronic cascade, eV
+	TEDDParameterization Parameterization;
+	fp TrCutThreshold;            ///transverse cutoff threshold, g/cm2
+	fp LonCutThreshold;           ///longitudinal cutoff threshold, g/cm2
+};
 
 ///Heat energy density distribution depending on hadronic cascade energy
 /**
@@ -37,6 +47,41 @@ protected:
 		const fp I = P1R * TMath::Gamma(4.5 - 2 * P2R) * TMath::Gamma(P2R) / TMath::Gamma(4.5 - P2R);
 		return fp(1) / I * pow((r / P1R), (P2R - 1)) * pow((1 + r / P1R), (P2R - 4.5));
   }
+
+	///Longitudinal distribution of the energy density
+	fp L (const fp &z)
+	{
+		switch ( Parameterization )
+		{
+			case TEDDParameterization::CORSIM:
+				return L_CORSIM(z);
+				break;
+				//case SAUND:
+				//  return L_SAUND(z);
+				//  break;
+				//case NIESSBERTIN:
+				//  return L_NIESSBERTIN(z);
+				//  break;
+		};
+	}
+
+	///Transverse distribution of the energy density
+	fp R (const fp r, const fp z)
+	{
+		switch ( Parameterization )
+		{
+			case TEDDParameterization::CORSIM:
+				return R_CORSIM(r, z);
+				break;
+				//case SAUND:
+				//  return R_SAUND(r, z);
+				//  break;
+				//case NIESSBERTIN:
+				//  return R_NIESSBERTIN(r, z);
+				//  break;
+		};
+		return 0;
+	}
 public:
   TEnergyDensityDistribution(
 		const fp E0,                                    ///total energy of the hadronic cascade, eV
@@ -90,11 +135,11 @@ public:
 
 	///eps = 1/(E0*2*Pi()*r) * d^2E/drdz //Relative energy density
 	///Cylindrical coordinate system
-  fp operator () (const fp r, const fp z)
+	virtual fp operator () (const fp r, const fp z)
   {
     fp r_int = r;
-    if (Parameterization == TEDDParameterization::CORSIM && r_int < 10e-6)
-			r_int = 10e-6;
+		if (Parameterization == TEDDParameterization::CORSIM && r_int < static_cast<fp>(10e-6))
+			r_int = static_cast<fp>(10e-6);
 		fp result = L(z) * R(r_int, z) / (GetE0() * 2 * TMath::Pi() * r_int);
     if (!isfinite(result))
       return 0.;
@@ -104,50 +149,35 @@ public:
 
 	///eps = 1/(E0*2*Pi()*r) * d^2E/drdz //Relative energy density
 	///Spherical coordinate system, format required by ROOT double r = sqrt(pow(x[0],2)+pow(x[1],2)); double z = x[2];
-  fp operator () (const double * x, const double * p)
+	virtual Double_t operator () (const Double_t * x, const Double_t * p)
   {
-    const double  r = sqrt(pow(x[0], 2) + pow(x[1], 2)),
-                  z = x[2];
-    double result;
+		const fp  r = static_cast<fp>(sqrt(pow(x[0], 2) + pow(x[1], 2))),
+							z = static_cast<fp>(x[2]);
+		Double_t result;
     if (z >= 0 && z < LonCutThreshold && r >= 0 && r < TrCutThreshold)
-      result = (*this)(r,z);
+			result = static_cast<Double_t>((*this)(r,z));
     else
-      result = 0.;
+			result = 0.;
     return result;
   }
 
-  ///Longitudinal distribution of the energy density
-  fp L (const fp &z)
-  {
-    switch ( Parameterization )
-    {
-      case TEDDParameterization::CORSIM:
-        return L_CORSIM(z);
-        break;
-        //case SAUND:
-        //  return L_SAUND(z);
-        //  break;
-        //case NIESSBERTIN:
-        //  return L_NIESSBERTIN(z);
-        //  break;
-    };
-  }
+	//Returns the linear coordinate of the maximum of the cascade
+	virtual fp EvaluateLMax()
+	{
+		fp result = 0;
+		//TF1 в моей версии ROOT непотокобезопасна и вызывает поломку памяти
+		//при многопоточном использовании, поэтому блокируем мьютексом главный поток
+		TThread::Lock();
+		try {
+			auto redl = [this](const Double_t * x, const Double_t * p){ return static_cast<Double_t>(TEnergyDensityDistribution::operator()(1., x[0])); };
 
-  ///Transverse distribution of the energy density
-  fp R (const fp r, const fp z)
-  {
-    switch ( Parameterization )
-    {
-      case TEDDParameterization::CORSIM:
-        return R_CORSIM(r, z);
-        break;
-        //case SAUND:
-        //  return R_SAUND(r, z);
-        //  break;
-        //case NIESSBERTIN:
-        //  return R_NIESSBERTIN(r, z);
-        //  break;
-    };
-		return 0;
-  }
+			TF1 fredl("REDL", redl, 0., static_cast<double>(LonCutThreshold), 1);
+			result = static_cast<fp>(fredl.GetMaximumX(0., static_cast<double>(LonCutThreshold)));
+		} catch (std::exception &e){
+			TThread::UnLock();
+			throw e;
+		};
+		TThread::UnLock();
+		return result;
+	}
 };

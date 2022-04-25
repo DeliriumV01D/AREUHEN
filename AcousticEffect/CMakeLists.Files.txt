@@ -15,6 +15,7 @@ set(HEADERS ${HEADERS}
 	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TAcousticPressure.h
 	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFFT.h
 	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFilonIntegrator.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TCylindersSuperpositionApproximatedEDD.h
 )
 
 set(LIBS ${LIBS}
