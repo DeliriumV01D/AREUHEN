@@ -17,6 +17,7 @@
 #include "Math/Integrator.h"
 
 #include <vector>
+#include <cmath>
 
 /******************************************************************************
 TFwWrapper
@@ -34,7 +35,7 @@ void TFwWrapper :: SetParams(const TAcousticPressureParams &params)
 	Params = params;
 	if (EDD == nullptr || params.Parameterization != EDD->GetParametrization())
 		EDD = std::unique_ptr<TEnergyDensityDistribution>(new TEnergyDensityDistribution(params.E0, params.Parameterization, params.TrCutThreshold, params.LonCutThreshold));
-  if (abs(EDD->GetE0() - params.E0) < 1e-6)
+	if (abs(EDD->GetE0() - params.E0) > static_cast<fp>(1e-6))
     EDD->SetE0(params.E0);
 }
 
@@ -51,10 +52,10 @@ fp TFwWrapper :: operator () (const fp phi, const fp r, const fp z) const
 //Root 		r = *arg;	z = *(arg + 1);	phi = *(arg + 2);
 Double_t TFwWrapper::operator ()(const Double_t * arg)
 {
-  const fp r = *arg,
-	         z = *(arg + 1),
-           phi = *(arg + 2);
-  return (*this)(phi, r, z);
+	const fp r = static_cast<fp>(*arg),
+					 z = static_cast<fp>(*(arg + 1)),
+					 phi = static_cast<fp>(*(arg + 2));
+	return static_cast<Double_t>((*this)(phi, r, z));
 }
 
 TEnergyDensityDistribution * TFwWrapper :: GetEDD() const noexcept
@@ -96,9 +97,9 @@ void TAcousticPressure :: GetComplexPwSeries(	const fp &rd,
 
   for (size_t i = 0; i < N; i++)
   {
-		fp w = fp(i) * fmax * 2. * TMath::Pi() / N;
+		fp w = fp(i) * fmax * 2 * static_cast<fp>(TMath::Pi()) / N;
 		pwx[i] = this->GetComplexPwValue(rd, zd, w);
-		mpwx[i] = sqrt(pow(pwx[i].real(), fp(2.)) + pow(pwx[i].imag(), fp(2.)));
+		mpwx[i] = static_cast<fp>(sqrt(pow(pwx[i].real(), 2) + pow(pwx[i].imag(), 2)));
   };
 }
 
@@ -143,9 +144,9 @@ std::complex<fp> TRICAP :: GetComplexPwValue (const fp &rd, const fp &zd, const 
 												arg_hi(3);
 
 	arg_low[0] = 0.;          //r
-	arg_hi[0] = FwWrapper->GetParams().TrCutThreshold;    //r
+	arg_hi[0] = static_cast<Double_t>(FwWrapper->GetParams().TrCutThreshold);    //r
 	arg_low[1] = 0.;          //z
-	arg_hi[1] = FwWrapper->GetParams().LonCutThreshold;   //z
+	arg_hi[1] = static_cast<Double_t>(FwWrapper->GetParams().LonCutThreshold);   //z
 	arg_low[2] = 0.;          //phi
 	arg_hi[2] = 2 * TMath::Pi();//phi
 	//By default uses adaptive multi-dimensional integration using the algorithm from Genz Mallik implemented in the class ROOT::Math::AdaptiveIntegratorMultiDim
@@ -163,10 +164,10 @@ std::complex<fp> TRICAP :: GetComplexPwValue (const fp &rd, const fp &zd, const 
 	params.w = w;
 	params.PartOfComplexNumber = TPartOfComplexNumber::Re;
 	FwWrapper->SetParams(params);
-	result.real(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data()));
+	result.real(static_cast<fp>(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data())));
 	params.PartOfComplexNumber = TPartOfComplexNumber::Im;
 	FwWrapper->SetParams(params);
-	result.imag(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data()));
+	result.imag(static_cast<fp>(integrator.Integral(/*FwWrapper,*/ arg_low.data(), arg_hi.data())));
 
 	return result * (params.E0) * w;
 }
@@ -208,73 +209,349 @@ void TMCICAP :: GetComplexPwSeries(	const fp &rd,
 ){
   const fp d = sqrt(pow(rd, fp(2.)) +  pow(zd, fp(2.)));
 
+	if (FwWrapper->GetEDD() == nullptr)
+		std::cout<<"FwWrapper->GetEDD() == nullptr"<<std::endl;
+
+	bool outside_pancake = ((abs(zd) > 1000) && (abs(rd / zd) < 6));			//simple geometric filtering of the angle of divergence
+
+
   //Инициализируем класс для работы со случайными последовательностями заданного распределения
   //нашей функцией распределения энергии в каскаде - EDD. Используется генератор псевдослучайной
   //последовательности Mersenne Twister метод HITRO – Markov Chain - HIT-and-run sampler with Ratio-Of-uniforms
   TF3 f(
         "g3d",
         FwWrapper->GetEDD(),
-        -FwWrapper->GetParams().TrCutThreshold,
-        FwWrapper->GetParams().TrCutThreshold,
-        -FwWrapper->GetParams().TrCutThreshold,
-        FwWrapper->GetParams().TrCutThreshold,
+				static_cast<Double_t>(-FwWrapper->GetParams().TrCutThreshold),
+				static_cast<Double_t>(FwWrapper->GetParams().TrCutThreshold),
+				static_cast<Double_t>( -FwWrapper->GetParams().TrCutThreshold),
+				static_cast<Double_t>(FwWrapper->GetParams().TrCutThreshold),
         0,
-        FwWrapper->GetParams().LonCutThreshold,
+				static_cast<Double_t>(FwWrapper->GetParams().LonCutThreshold),
         0
       );
 
   TUnuranMultiContDist dist(&f);
   TRandom3 twister_gen;	//Mersenne Twister
   TUnuran unr(&twister_gen);
-  std::string method = "method=hitro; use_boundingrectangle=false; use_adaptiveline=true; variant_coordinate";//"method=hitro; use_boundingrectangle=true ";
+	std::string method = "method=hitro; use_boundingrectangle=true; use_adaptiveline=true; variant_coordinate";//"method=hitro; use_boundingrectangle=true ";
   if (!unr.Init(dist, method))
 		throw std::runtime_error("TMCICAP :: GetComplexPwSeries error: Error initializing unuran");
 
-  fp bin_width = 1./(2.*fmax);	//По определению
+	fp bin_width = static_cast<fp>(1)/(fmax * 2);	//По определению
   //Это ширина бина не Et, а восстановленного Pt
   fp htau = d/FwWrapper->GetParams().cs + bin_width*N/2;
   fp ltau = d/FwWrapper->GetParams().cs - bin_width*N/2;
 
   //Набрасываем гистограмму времен прихода из каждой точки
-  TH1D Et("Et", "Et-title", static_cast<int>(N) * 2, ltau, htau);
-	//!!!#pragma omp parallel for
-	for (int i = 0; i < NPoints; i++)
-  {
-		double x[3];
-    unr.SampleMulti(x);				//get new x
+	TH1D Et("Et", "Et-title", static_cast<int>(N) * 2, static_cast<Double_t>(ltau), static_cast<Double_t>(htau));
 
-		if (edd3d != nullptr)
-			edd3d->Fill(x[0],x[1],x[2]);
-		if (edd2d != nullptr)
-			edd2d->Fill(x[0],x[2]);
+	if (!outside_pancake)  	//!!!#pragma omp parallel for
+		for (int i = 0; i < NPoints; i++)
+		{
+			double x[3];
+			unr.SampleMulti(x);				//get new x
 
-		fp r = sqrt(pow(x[0], 2.) + pow(x[1], 2.));
-		fp z = x[2];
-		fp tau = sqrt(pow(rd - r, 2) +  pow(zd - z, 2)) / FwWrapper->GetParams().cs;
-    if ((tau > ltau) && (tau < htau))
-      Et.Fill(tau);
-    else
-      i--;
-	}
+			if (edd3d != nullptr)
+				edd3d->Fill(x[0],x[1],x[2]);
+			if (edd2d != nullptr)
+				edd2d->Fill(x[0],x[2]);
 
-	fp Omega = 2. * TMath::Pi() * fmax; //
+			fp r = static_cast<fp>(sqrt(pow(x[0], 2.) + pow(x[1], 2.)));
+			fp z = static_cast<fp>(x[2]);
+			fp tau = static_cast<fp>(sqrt(pow(rd - r, 2) +  pow(zd - z, 2))) / FwWrapper->GetParams().cs;
+			if ((tau > ltau) && (tau < htau))
+				Et.Fill(static_cast<Double_t>(tau));
+			else
+				i--;
+		}
+
+	fp Omega = static_cast<fp>(TMath::Pi()) * fmax * 2; //
 	std::vector<Double_t> arr_etv(N * 2),
 												arr_re_pw(N * 2),
 												arr_im_pw(N * 2);
   for (size_t i = 0; i < N; i++)
-    arr_etv[i] = Et.GetBinContent(static_cast<int>(i)) * 1./(bin_width * NPoints) ;
+		if (outside_pancake) {
+			arr_etv[i] = 0;
+		} else {
+			arr_etv[i] = Et.GetBinContent(static_cast<int>(i)) * 1./(bin_width * NPoints) ;
+		}
 
 	TFFT fft({TFFTOperation::R2C_FORWARD, TFFTNormalization::TWO_SIDED, static_cast<int>(N * 2)});
 	fft(arr_re_pw.data(), arr_im_pw.data(), arr_etv.data());
-	//!!!#pragma omp parallel for
+	#pragma omp parallel for
 	for (size_t i = 0; i < N; i++)		//  *iwn
   {
     //есть множитель i => (0 + i*1)*(re + i*im) = -im + i*re
-    pwx[i].real(arr_re_pw[i]);
-    pwx[i].imag(arr_im_pw[i]);
+		pwx[i].real(static_cast<fp>(arr_re_pw[i]));
+		pwx[i].imag(static_cast<fp>(arr_im_pw[i]));
 		pwx[i] = /*std::complex<fp>(0, 1) * */ pwx[i] * (fp(1.) / d * FwWrapper->GetParams().E0 * fp(i/*+1*/)/**Omega*//N);
     mpwx[i] = sqrt(pow(pwx[i].real(), fp(2.)) + pow(pwx[i].imag(), fp(2.)));
 	}
 
-  fmax = Omega/(2.*TMath::Pi());
+	fmax = Omega/(2 * static_cast<fp>(TMath::Pi()));
 }
+
+
+/******************************************************************************
+TAICP - Метод интегрирования Аскарьяна, основанный на формуле Филона
+Аскарьян Г.А., Долгошеин Б.А., Акустическая регистрация нейтрино высоких энергий.
+//Письма в ЖЭТФ.-1977.-Т.25.-С.232-233.
+******************************************************************************/
+
+
+
+//fp phi_z(const fp z, const fp Rd, const fp Zd, const fp w, const fp cs)   //->lambda
+//{
+//	const fp lambda = 1000;
+//	fp result = fp(1)/lambda / pow(fp(1)/	pow(lambda, 2) + pow(w, 2) / pow(cs, 2) * pow(Rd, 2) / (pow(Rd, 2) + pow(Zd - z, 2)), fp(1.5));
+//	if (!isfinite(result)) result = 0.;
+//	return result;
+//};
+
+////Set experiment conditions
+//void TAICAP :: SetConditions(const TAcousticPressureParams &conditions)
+//{
+//	Conditions = conditions;
+//	TEnergyDensityDistributionParams params;
+//	params.Parameterization = conditions.Parameterization;
+//	params.E0 = conditions.E0;
+//	params.TrCutThreshold = conditions.TrCutThreshold;
+//	params.LonCutThreshold = conditions.LonCutThreshold;
+
+//	if (CSAEDD == nullptr || conditions.Parameterization != CSAEDD->GetParametrization() || abs(CSAEDD->GetE0() - conditions.E0) > static_cast<fp>(1e-6))
+//		CSAEDD = std::make_unique<TCylindersSuperpositionApproximatedEDD>(params, N_CYLINDERS);
+
+//	LMax = CSAEDD->EvaluateLMax();//Returns the linear coordinate of the maximum of the cascade
+//}
+
+////Акустический эффект (на данной частоте w) от ЯЭК в точке распложения детектора (Rd,Zd)
+//std::complex<fp> TAICAP :: GetComplexPwValue (const fp &Rd, const fp &Zd, const fp &w)
+//{
+//	std::complex<fp> result = {0, 0};
+//	const fp	a = static_cast<fp>(sqrt(fp(1) + pow(Zd / (Rd + 1), fp(2)))),			//Пределы по X
+//						b = fp(1),
+//						c = sqrt(fp(1) + fp(1.5) * pow(Zd / (Rd + 1), fp(2)) + fp(1) * pow((Zd - 500) / (Rd + 1), fp(2)));  //X = infinity
+//	std::complex<fp> imu = 0.;	imu.imag(1);					//i
+
+//	//!!!Цилиндры уже предвычислены. Нужно только посчитать сумму интегралов от всех цилиндров в данной точке методом Филона.
+//	std::vector<TCyl> * cylinders = CSAEDD->GetCylinders();
+
+//	for (auto it : *cylinders)
+//	{
+//		bool v;
+//		auto cs = this->Conditions.cs;
+//		auto F = [it, Rd, Zd, w, cs, v](const fp x)
+//		{
+//			std::complex<fp> result = 0;
+//			fp	d_2 = pow(x, fp(2)) - 1,
+//					d = static_cast<fp>(sqrt(abs(d_2))),
+//					z;
+
+//			if (v)				//z > Zd; z = Zd + sqrt(...)
+//				z = Zd + Rd * d;
+//			else					//z <= Zd; z = Zd - sqrt(...)
+//				z = Zd - Rd * d;
+
+//			result.real(/*Затухание(w->f?) * */phi_z(z, Rd, Zd, w, cs) / d);
+//			result.imag(0.);
+
+//			Где используется информация о цилиндрах?
+//			it.AverageED;
+//			it.R;
+//			it.Zn;
+//			it.Zp;
+//			phi_z(z, Rd, Zd, w, cs);
+
+//			if (!isfinite(result.imag()))
+//				result.imag(0);
+//			if (!isfinite(result.real()))
+//				result.real(0);
+//			return result;
+//		};
+
+//		std::complex<fp> 	result_1 = static_cast<fp>(0),
+//											result_2 = static_cast<fp>(0);
+//		if (Zd >= 0) {
+//			v = false;	//z <= Zd; z = Zd - sqrt(...)
+//			result_1 = - FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_INTERVALS);
+
+//			v = true;		//z > Zd; z = Zd + sqrt(...)
+//			result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_INTERVALS);
+//		} else {
+//			//v = false;	//z <= Zd; z = Zd - sqrt(...)
+//			//result_1 = FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_INTERVALS);
+
+//			v = true;		//z > Zd; z = Zd + sqrt(...)
+//			result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_INTERVALS);
+//		}
+
+//		//есть множитель i => (0 + i*1)*(re + i*im) = -im + i*re и минус перед интегралом
+//		result += fact * w * pow(cs, 2.) * CSAEDD->GetE0()/*???*/ * (result_1 + result_2) * 2.7e-4/*???*/;		/*множитель для гамма*///!!!
+//	}
+
+//	return result;
+//}
+
+//	TF F;
+
+//	F.Rd = Rd;
+//	F.Zd = Zd;
+//	F.w = w;
+//	F.cs = this->cs;
+//	F.ExpCoefficients = this->ExpCoefficients;
+//	//F.Attenuation = this->Attenuation ???
+
+//	if (Zd >= 0) {
+//		F.v = false;	//z <= Zd; z = Zd - sqrt(...)
+//		result_1 = - FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_FILON_INTERVALS);
+
+//		F.v = true;		//z > Zd; z = Zd + sqrt(...)
+//		result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_FILON_INTERVALS);
+//	} else {
+//		//F.v = false;	//z <= Zd; z = Zd - sqrt(...)
+//		//result_1 = FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_FILON_INTERVALS);
+
+//		F.v = true;		//z > Zd; z = Zd + sqrt(...)
+//		result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_FILON_INTERVALS);
+//	}
+
+//	//есть множитель i => (0 + i*1)*(re + i*im) = -im + i*re и минус перед интегралом
+//	return fact * w * pow(this->cs, 2.) * RED->GetE0() * (result_1 + result_2) * 2.7e-4;		/*множитель для гамма*///!!!
+
+
+////Функция, вычисляющая коэффициенты разложения
+//TExpCoefficients GetExpCoefficients(TRED * red, int N /* = N_FILON_CYLINDERS*/)
+//{
+//	//Пока просто разобъем по оси z на N частей, независимо от того значима эта часть или нет
+//	//Интерполируем прямой в точках r1 и r2
+//	const fp	z_min = 0.,		//g/cm^2
+//						z_max = 1000.,//g/cm^2
+//						r1 = 0.05,
+//						r2 = 2.7;
+//	int i;
+//	fp	hz = (z_max - z_min)/N,
+//			zi, y1, y2, k, b;
+//	TExpCoefficients result;
+//	result.resize(N);
+//	for (i = 0; i < N; i++) {
+//		zi = z_min + i*hz + hz/2.;	//Середина цилиндра
+//		y1 = log(2.*TMath::Pi()*(*red)(r1, zi));
+//		y2 = log(2.*TMath::Pi()*(*red)(r2, zi));
+//		k = (y2 - y1)/(r2 - r1);
+//		b = y1 - k * r1;
+//		result[i].zi = zi;
+//		result[i].lambdai = -1./k;
+//		result[i].Ai = exp(b);
+//	};
+//	return result;
+//};
+
+//fp phi_z(const fp z, const TExpCoefficients exp_coefficients, const fp Rd, const fp Zd, const fp w, const fp cs)
+//{
+//	int i_min;
+//	fp	result,
+//			A_nearest = 0.,
+//			lambda_nearest = 1.;
+//	const fp	Rd_2 = pow(Rd, fp(2)),
+//						//-1, поскольку значения по центру интервалов, а мне нужна ширина от края до края
+//						hz = (exp_coefficients[exp_coefficients.size() - 1].zi - exp_coefficients[0].zi)/(exp_coefficients.size() - 1);
+
+//	if (exp_coefficients.size() == 0) throw exception("TF :: operator () incorrect expansion coefficients!");
+
+//	//Найдем цилиндр, в котором расположен наш z. В остальных случаях Ai = 0.; lambdai = 1.;
+//	if ((z < exp_coefficients[0].zi - hz/2) || (z > exp_coefficients[exp_coefficients.size() - 1].zi + hz/2))
+//	{
+//		A_nearest = 0.;
+//		lambda_nearest = 1.;
+//	} else {
+//		i_min = int((z - (exp_coefficients[0].zi - hz/2.)) / hz);
+//		A_nearest = exp_coefficients[i_min].Ai;
+//		lambda_nearest = exp_coefficients[i_min].lambdai;
+//	}; //else
+
+//	//Строим хвост нашего распределения
+//	if ((z < 1500.) && (z > exp_coefficients[exp_coefficients.size() - 1].zi))
+//	{
+//		i_min = exp_coefficients.size() - 1;
+//		A_nearest = exp_coefficients[i_min].Ai;
+//		lambda_nearest = exp_coefficients[i_min].lambdai;
+//	}
+
+//	result = A_nearest/(	lambda_nearest * pow((
+//																						pow(lambda_nearest, fp(-2)) +
+//																						pow(w/cs, fp(2)) *
+//																						Rd_2 /(Rd_2 + pow(Zd - z, fp(2)))
+//																						), fp(1.5))
+//																					);
+
+//	if (!_finite(result)) result = 0.;
+
+//	return result;
+//};
+
+////Подынтегральная функция
+//TCmplx TF :: operator () (const fp x)
+//{
+//	TCmplx result;
+//	fp phi;
+//	fp	d_2 = pow(x, fp(2.)) - 1.,
+//			d = sqrt(abs(d_2)),
+//			z;
+
+//	if (this->v)	//z > Zd; z = Zd + sqrt(...)
+//		z = Zd + Rd*d;
+//	else					//z <= Zd; z = Zd - sqrt(...)
+//		z = Zd - Rd*d;
+
+//	phi = phi_z(z, ExpCoefficients, Rd, Zd, w, cs);
+
+//	result.real(/*Затухание(w->f?) * */phi/d);
+//	result.imag(0.);
+//	if (!_finite(result.imag()) || !_finite(result.real())) result = 0.;
+//	return result;
+//};
+
+////Устанавливает условия проведение эксперимента
+//void TAICP :: SetConditions(	const fp E0 /*= 1.E20*/,			//eV
+//															const fp cs /*= 150000.*/			//g/cm2/s
+//										){
+//	this->TBaseP::SetConditions(E0, cs);
+//	ExpCoefficients = GetExpCoefficients(RED, N_FILON_CYLINDERS);
+//};
+
+////
+//TCmplx TAICP :: GetComplexPwValue (const fp Rd, const fp Zd, const fp w)
+//{
+//	const fp	a = sqrt(1. + pow(Zd/(Rd+1), fp(2.))),			//Пределы по X
+//						b = 1.,
+//						//c = sqrt(1. + 5.*pow(Zd/(Rd+1), fp(2.)) + (abs(Zd)+500)/(Rd+50)/10);
+//						c = sqrt(1. + 1.5*pow(Zd/(Rd+1), fp(2.)) + 1.*pow((Zd - 500)/(Rd+1), fp(2.)));
+//	TCmplx	result_1 = 0.,
+//					result_2 = 0.,
+//					fact = 0.;	fact.imag(1);//i
+//	TF F;
+
+//	F.Rd = Rd;
+//	F.Zd = Zd;
+//	F.w = w;
+//	F.cs = this->cs;
+//	F.ExpCoefficients = this->ExpCoefficients;
+//	//F.Attenuation = this->Attenuation ???
+
+//	if (Zd >= 0) {
+//		F.v = false;	//z <= Zd; z = Zd - sqrt(...)
+//		result_1 = - FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_FILON_INTERVALS);
+
+//		F.v = true;		//z > Zd; z = Zd + sqrt(...)
+//		result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_FILON_INTERVALS);
+//	} else {
+//		//F.v = false;	//z <= Zd; z = Zd - sqrt(...)
+//		//result_1 = FilonIntegrator.Integrate(F, w*Rd/cs, a, b, N_FILON_INTERVALS);
+
+//		F.v = true;		//z > Zd; z = Zd + sqrt(...)
+//		result_2 = + FilonIntegrator.Integrate(F, w*Rd/cs, b, c, N_FILON_INTERVALS);
+//	}
+
+//	//есть множитель i => (0 + i*1)*(re + i*im) = -im + i*re и минус перед интегралом
+//	return fact * w * pow(this->cs, 2.) * RED->GetE0() * (result_1 + result_2) * 2.7e-4;		/*множитель для гамма*///!!!
+//};

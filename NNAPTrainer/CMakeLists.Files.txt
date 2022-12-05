@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.4)
+
+#project(NNAPTrainer)
+
+set(SOURCES ${SOURCES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Common/TAcousticPressure.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFFT.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/Trainable.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/Trainer.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/TensorBoard.cpp
+	TNNAPDataset.cpp
+	main.cpp
+)
+
+set(HEADERS ${HEADERS}
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/CommonDefinitions.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TRootApp.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TEnergyDistributionDensity.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TAcousticPressure.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFFT.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TFilonIntegrator.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TCylindersSuperpositionApproximatedEDD.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TRandomInt.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TRandomDouble.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/TorchHeader.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/Trainable.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/Trainer.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/TrainHistoryLog.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../LibTorchTraining/TensorBoard.h
+	TNNAPDataset.h
+	${CMAKE_CURRENT_SOURCE_DIR}/../Common/TNNAP.h
+)
+
+set(LIBS ${LIBS}
+	Imt
+	Core
+	Graf
+	Graf3d
+	MathCore
+	MathMore
+	Gpad
+	#Histexception
+	Hist
+	Matrix
+	Physics
+	Net
+	RIO
+	Thread
+	Unuran
+)

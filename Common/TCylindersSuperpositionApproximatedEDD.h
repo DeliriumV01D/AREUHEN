@@ -129,18 +129,19 @@
 //	};
 //}
 
+struct TCyl {
+	fp	AverageED,
+			BorderED,
+			Zn,
+			Zp,
+			R;
+	TCyl() : AverageED(0), BorderED(0), Zn(0), Zp(0), R(0){}
+};
+
 ///Energy density distribution is approximated by a superposition of cylinders with a uniform distribution density
 class TCylindersSuperpositionApproximatedEDD : public TEnergyDensityDistribution {
 protected:
 	unsigned int NCyl;
-	struct TCyl {
-		fp	AverageED,
-				BorderED,
-				Zn,
-				Zp,
-				R;
-		TCyl() : AverageED(0), BorderED(0), Zn(0), Zp(0), R(0){}
-	};
 	std::vector<TCyl> Cylinders;
 public:
 	TCylindersSuperpositionApproximatedEDD(const TEnergyDensityDistributionParams &params, const unsigned int ncyl)
@@ -150,9 +151,9 @@ public:
 		Cylinders = std::vector<TCyl>(static_cast<size_t>(NCyl));
 
 		const unsigned int nsteps = 100 * NCyl;
-		fp	r0 = static_cast<fp>(0.2),
+		fp	r0 = static_cast<fp>(0.15),
 				lmax = this->EvaluateLMax(),
-				max_ed = TEnergyDensityDistribution::operator()(r0, lmax),
+				max_ed = TEnergyDensityDistribution::operator()(0, lmax),
 				h_ed = (max_ed - max_ed * static_cast<fp>(0.001))/(NCyl + 1),
 				h_r = params.TrCutThreshold/nsteps,
 				h_z_n = lmax/nsteps,
@@ -206,4 +207,6 @@ public:
 				result += Cylinders[i].AverageED;
 		return result;
 	}
+
+	std::vector<TCyl> * GetCylinders(){ return &Cylinders; }
 };

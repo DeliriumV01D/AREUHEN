@@ -8,6 +8,7 @@
 
 #include "TEnergyDistributionDensity.h"
 #include "TFilonIntegrator.h"
+#include "TCylindersSuperpositionApproximatedEDD.h"
 
 //Simple test:
 //
@@ -30,21 +31,21 @@
 //	canvas->Divide(2);
 //	canvas->Draw();
 
-//	const fp	rd = 100000.,
+//	const fp	rd = 100000,
 //						zd = 350;
-//	fp fmax = 1.e5;
+//	fp fmax = static_cast<fp>(1.e5);
 //	const size_t n = 128;
 //	std::vector<fp> mpwx(n),
 //									pt(n);
 //	std::vector<std::complex<fp>> pwx(n);
 
 //	TAcousticPressureParams params;
-//	params.E0 = 1.e20;				//total energy of the hadronic cascade, eV
-//	params.cs = 145000.;			//speed of sound in a medium, g/cm2/s
+//	params.E0 = static_cast<fp>(1.e20);				//total energy of the hadronic cascade, eV
+//	params.cs = static_cast<fp>(145000);			//speed of sound in a medium, g/cm2/s
 //	params.Rd = rd;						//detector coordinates, g/cm2
 //	params.Zd = zd;						//GetLMax(), detector coordinates, g/cm2
-//	params.LonCutThreshold = 1000.;		//longitudinal cutoff threshold, g/cm2
-//	params.TrCutThreshold = 20.;			//transverse cutoff threshold, g/cm2
+//	params.LonCutThreshold = static_cast<fp>(1000);		//longitudinal cutoff threshold, g/cm2
+//	params.TrCutThreshold = static_cast<fp>(20);			//transverse cutoff threshold, g/cm2
 //	params.Parameterization = TEDDParameterization::CORSIM;
 
 //	//Monte Carlo method for the calculation of the acoustic pressure of the hadronic cascade
@@ -54,22 +55,22 @@
 //	acoustic_pressure.SetConditions(params);
 
 //	TH3D h1(	"h13D","Energy density distribution",300,
-//						-0.5*params.TrCutThreshold,
-//						0.5*params.TrCutThreshold,
+//						Double_t(-0.5 * Double_t(params.TrCutThreshold)),
+//						Double_t(0.5 * Double_t(params.TrCutThreshold)),
 //						300,
-//						-0.5*params.TrCutThreshold,
-//						0.5*params.TrCutThreshold,
+//						Double_t(-0.5 * Double_t(params.TrCutThreshold)),
+//						Double_t(0.5 * Double_t(params.TrCutThreshold)),
 //						300,
 //						0,
-//						params.LonCutThreshold
+//						static_cast<Double_t>(params.LonCutThreshold)
 //					);
 //	TH2D h12(  "h12D","Energy density distribution",
 //						 100,
-//						 -0.5*params.TrCutThreshold,
-//						 0.5*params.TrCutThreshold,
+//						 Double_t(-0.5 * Double_t(params.TrCutThreshold)),
+//						 0.5 * Double_t(params.TrCutThreshold),
 //						 150,
 //						 0,
-//						 params.LonCutThreshold
+//						 Double_t(params.LonCutThreshold)
 //					);
 
 //	//Acoustic pressure depending on sound frequency (frequency spectrum)
@@ -94,19 +95,19 @@
 //	h12.SetContour(11);
 //	h12.Draw("CONT3");
 
-//	TH1D	Pw("Pw", "Pw-title", n, 0, fp(n-1)*fmax/n/1000),
-//				Pt("Pt", "Pt-title", n, 0, fp(n-1)/fmax);
+//	TH1D	Pw("Pw", "Pw-title", n, 0, Double_t(n-1) * Double_t(fmax) / n / 1000),
+//				Pt("Pt", "Pt-title", n, 0, Double_t(n-1) / Double_t(fmax));
 
 //	for (size_t i = 0; i < n; i++ )
 //		Pw.SetBinContent(static_cast<Int_t>(i), mpwx[i] * abs(/*(*(PRZt->Gamma))(4,0,isBaikal)*/.1/6.25/1e18));	// /6.25/1E18 ->Pa
-//	Pw.SetBins(n-1, 0, fp(n-1)*fmax/n/1000);		//Hz->kHz
+//	Pw.SetBins(n-1, 0, static_cast<Double_t>(n-1) * static_cast<Double_t>(fmax) / n / 1000);		//Hz->kHz
 
 //	//Acoustic pressure depending on time
 //	acoustic_pressure.GetPtSeries(pwx, pt, fmax, n);
 
 //	for (size_t i = 0; i < n; i++ )
 //		Pt.SetBinContent(static_cast<Int_t>(i), pt[i] * /*(*(PRZt->Gamma))(4,0,isBaikal)*/.1/6.25/1e18);// /6.25/1E18 -> Pa
-//	Pt.SetBins(n-1, 0, fp(n-1)/fmax);
+//	Pt.SetBins(n-1, 0, static_cast<Double_t>(n-1)/static_cast<Double_t>(fmax));
 //	app.GetCanvas(1)->cd(1);
 //	ApplyAxisStyle(&Pt,"P(t)", "t,sec", "P,Pa");
 //	Pt.Draw("L");
@@ -125,9 +126,9 @@ enum class TPartOfComplexNumber{Im, Re};
 
 struct TAcousticPressureParams {
   ///own params
-  TPartOfComplexNumber PartOfComplexNumber;
+	TPartOfComplexNumber PartOfComplexNumber;
 	fp Rd; fp Zd;									///detector coordinates, g/cm2
-  fp w;													///cyclic frequency
+	fp w;													///cyclic frequency
 	fp cs;												/////speed of sound in a medium, g/cm2/s
   ///TEnergyDensityDistribution delegate params
 	fp E0;												///total energy of the hadronic cascade, eV
@@ -237,3 +238,75 @@ public:
 																		TH2D * edd2d													///Debug options
 																	);
 };		//TMCICAP
+
+
+
+
+/******************************************************************************
+TAICP - Метод интегрирования Аскарьяна, основанный на формуле Филона
+Аскарьян Г.А., Долгошеин Б.А., Акустическая регистрация нейтрино высоких энергий.
+//Письма в ЖЭТФ.-1977.-Т.25.-С.232-233.
+******************************************************************************/
+
+//static const int N_INTERVALS = 16;
+//static const unsigned int N_CYLINDERS = 25;  ///!!!include to class params
+
+/////Метод интегрирования Аскарьяна, основанный на формуле Филона decomposition into cylinders
+//class TAICAP : public TAcousticPressure {
+//private:
+//	TAcousticPressureParams Conditions;
+//	TFilonIntegrator <fp> FilonIntegrator;
+//	std::unique_ptr<TCylindersSuperpositionApproximatedEDD> CSAEDD;
+//public:
+//	///Set experiment conditions
+//	virtual void SetConditions(const TAcousticPressureParams &conditions) override;
+//	virtual std::complex<fp> GetComplexPwValue (const fp &rd, const fp &zd, const fp &w) override;
+//};		//TAICAP
+
+//static const int N_INTERVALS = 16;
+//static const int N_CYLINDERS = 32;	//Линейно влияет на скорость вычислений.
+
+/////Вектор коэффициентов разложения плотности энерговыделения в суперпозицию цилиндров по оси z
+/////Логарифм радиальной компоненты плотноcти внутри каждого цилиндра приближен прямой
+//struct TCyl {
+//	fp zi;
+//	fp Ai;
+//	fp lambdai;
+//};
+
+////Функция, вычисляющая коэффициенты разложения
+//std::vector<TCyl> GetExpCoefficients(TEnergyDensityDistribution * edd, int N = N_CYLINDERS);
+
+//inline fp phi_z(const fp z, const std::vector<TCyl> exp_coefficients, const fp Rd, const fp Zd, const fp w, const fp cs);
+
+////Подынтегральная функция
+//class TF {
+//public:
+//	fp	Rd,
+//			Zd,
+//			w,
+//			cs;
+//	bool v;
+//	std::vector<TCyl> ExpCoefficients; //expansion coefficients
+//	std::complex<fp> operator () (const fp &x);
+//};
+
+////Метод интегрирования Аскарьяна, основанный на формуле Филона decomposition into cylinders
+//class TAICAP : public TAcousticPressure {
+//private:
+//	TFilonIntegrator FilonIntegrator;
+//	std::vector<TCyl> ExpCoefficients;
+//public:
+//	///Set experiment conditions
+//	virtual void SetConditions(const TAcousticPressureParams &conditions) override;
+
+//	virtual std::complex<fp> GetComplexPwValue (const fp &rd, const fp &zd, const fp &w) override;
+
+//	virtual void GetComplexPwSeries(	const fp &rd,
+//																		const fp &zd,
+//																		fp &fmax,															///Hz
+//																		size_t N,
+//																		std::vector<std::complex<fp>> &pwx,		///Комплексный спектр
+//																		std::vector<fp> &mpwx                 ///Модуль спектра
+//																	) override;
+//};		//TAICAP
